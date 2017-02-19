@@ -1,0 +1,416 @@
+<!--
+-----------------------------------------------
+			BOZHKOV PROJECTS
+			-WebGL projects-
+-----------------------------------------------
+-->
+﻿<!DOCTYPE html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Rubik's cube</title>
+
+	<script src="library.js"></script>
+
+	<script id="vshader" type="x-shader/x-vertex">
+		uniform mat4 uProjectionMatrix;
+		uniform mat4 uViewMatrix;
+		uniform mat4 uModelMatrix;
+
+		uniform bool uUseAmbient;
+		uniform vec3 uAmbientColor;
+
+		uniform bool uUseDiffuse;
+		uniform vec3 uDiffuseColor;
+
+		uniform vec3 uLightDir;
+
+		attribute vec3 aXYZ;
+		attribute vec3 aColor;
+		attribute vec3 aNormal;
+
+		varying vec3 vColor;
+
+		void main ()
+		{
+			mat4 mvMatrix = uViewMatrix * uModelMatrix;
+			gl_Position = uProjectionMatrix * mvMatrix * vec4(aXYZ,1);
+
+			
+			if (uUseAmbient)
+				vColor = uAmbientColor*aColor;
+			else
+				vColor = aColor;
+
+			
+			if (uUseDiffuse)
+			{
+				vec3 light = normalize(-uLightDir);
+				vec3 normal = vec3(normalize(mvMatrix*vec4(aNormal,0)));
+				vColor += aColor*uDiffuseColor*max(dot(normal,light),0.0);
+			}
+		}
+	</script>
+
+	<script id="fshader" type="x-shader/x-fragment">
+		precision mediump float;
+		varying vec3 vColor;
+		void main( )
+		{
+			gl_FragColor = vec4(vColor,1);
+		}
+	</script>
+
+	<script>
+		Base = function(n)
+		{
+			// current angle and angle`s difference
+			var a = 0, dA = 2*Math.PI/n; 
+
+			// generate bottom base
+			var data = [0,0,0, 0,0,-1];
+			for (var i=0; i<=n; i++)
+			{
+				data.push(Math.cos(a),Math.sin(a),0,0,0,-1);
+				a += dA;
+			}
+			// generate upper base
+			data.push(0,0,1, 0,0,1);
+			for (var i=0; i<=n; i++)
+			{
+				data.push(Math.cos(a)*0.8,Math.sin(a)*0.8,1,0,0,1);
+				a += dA;
+			}
+			// generate walls
+			a = 0;
+			var nZ = Math.cos(Math.PI/n); // height of normal vector
+			for (var i=0; i<=n; i++)
+			{
+				var N = [Math.cos(a+dA/2),Math.sin(a+dA/2)];
+				data.push(Math.cos(a)*0.8,Math.sin(a)*0.8,1,N[0],N[1],0);
+				data.push(Math.cos(a),Math.sin(a),0,N[0],N[1],0);
+				data.push(Math.cos(a+dA),Math.sin(a+dA),0,N[0],N[1],0);
+				data.push(Math.cos(a+dA)*0.8,Math.sin(a+dA)*0.8,1,N[0],N[1],0);
+				data.push(Math.cos(a+dA),Math.sin(a+dA),0,N[0],N[1],0);
+				data.push(Math.cos(a)*0.8,Math.sin(a)*0.8,1,N[0],N[1],0);
+				a += dA;
+			}
+
+			var buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+
+			this.n = n;
+			this.buf = buf;
+		}
+		Base.prototype.draw = function()
+		{
+			gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);
+			
+			gl.enableVertexAttribArray(aXYZ);
+			gl.vertexAttribPointer(aXYZ,3,gl.FLOAT,false,6*FLOATS,0*FLOATS);
+			
+			gl.enableVertexAttribArray(aNormal);
+			gl.vertexAttribPointer(aNormal,3,gl.FLOAT,false,6*FLOATS,3*FLOATS);
+			
+			gl.drawArrays(gl.TRIANGLE_FAN,this.n+2,this.n+2);
+			gl.vertexAttrib3fv(aColor,[0.1,0.2,0.3]);
+			gl.drawArrays(gl.TRIANGLE_FAN,0,this.n+2);
+			
+			gl.drawArrays(gl.TRIANGLES,2*this.n+4,6*this.n);
+		}
+
+		var base = [];
+
+		Plate = function(center,size,height,n,color,side)
+		{
+			this.center = center;
+			this.size = size;
+			this.height = height;
+			this.n = n;
+			this.color = color;
+			this.side = side;
+			
+			if (!base[n])
+				base[n] = new Base(n);
+		}
+
+		Plate.prototype.draw = function()
+		{
+			function side_1(center){
+				identity();
+				xRotate(-90);
+				yRotate(45);
+				zRotate(45);
+				scale([1,1,0.1]);
+				translate(center);
+			}
+			function side_2(center)
+			{
+				identity();
+				xRotate(90);
+				yRotate(-45);
+				zRotate(-45);
+				scale([1,1,0.1]);
+				translate(center);
+			}
+			function up(center){
+				identity();
+				scale([1,1,0.1]);
+				translate(center);
+			}
+			function down(center){
+				identity();
+				xRotate(180);
+				scale([1,1,0.1]);
+				translate(center);
+			}
+			function front(center){
+				identity();
+				xRotate(90);
+				yRotate(45);
+				zRotate(45);;
+				scale([1,1,0.1]);
+				translate(center);
+			}
+			function back(center){
+				identity();
+				xRotate(-90);
+				yRotate(-45);
+				zRotate(-45);;
+				scale([1,1,0.1]);
+				translate(center);
+			}
+
+			pushMatrix();
+			gl.vertexAttrib3fv(aColor,this.color);
+			switch (this.side) {
+				case "side_1": side_1(this.center);break;
+				case "up": up(this.center);break;
+				case "down": down(this.center);break;
+				case "front": front(this.center);break;
+				case "back": back(this.center);break;
+				case "side_2": side_2(this.center);break;
+			}
+			useMatrix();
+			base[this.n].draw();
+			popMatrix();
+		}
+
+		function start( )
+		{
+			var	canvas = document.getElementById("picasso");
+			canvas.addEventListener('webglcontextlost',function(event){event.preventDefault();},false);
+			canvas.addEventListener('webglcontextrestored',function(){init();},false);
+
+			init();
+			drawFrame();
+		}
+
+		function init()
+		{
+			gl = getContext("picasso");
+			glprog = getProgram("vshader","fshader");
+
+
+			aXYZ = gl.getAttribLocation(glprog,"aXYZ");
+			uProjectionMatrix = gl.getUniformLocation(glprog,"uProjectionMatrix");
+			uViewMatrix = gl.getUniformLocation(glprog,"uViewMatrix");
+			uModelMatrix = gl.getUniformLocation(glprog,"uModelMatrix");
+
+			aColor = gl.getAttribLocation(glprog,"aColor");
+			uAmbientColor = gl.getUniformLocation(glprog,"uAmbientColor");
+			uUseAmbient   = gl.getUniformLocation(glprog,"uUseAmbient");
+
+			aNormal = gl.getAttribLocation(glprog,"aNormal");
+			uDiffuseColor = gl.getUniformLocation(glprog,"uDiffuseColor");
+			uUseDiffuse = gl.getUniformLocation(glprog,"uUseDiffuse");
+			uLightDir = gl.getUniformLocation(glprog,"uLightDir");
+
+			gl.enable(gl.DEPTH_TEST);
+			gl.clearColor(0.0,0.0,1,0.2);
+
+			identity();
+			perspective(30,gl.canvas.width/gl.canvas.height,1,40000);
+
+			gl.uniform3f(uAmbientColor,0.2,0.2,0.2);
+			gl.uniform1i(uUseAmbient,true);
+
+			gl.uniform3f(uDiffuseColor,1,1,1);
+			gl.uniform1i(uUseDiffuse,true);
+
+			gl.uniform3f(uLightDir,0,0,-1);
+
+			var colorsArr=[[1,1,1],[1,0,0],[0,0,1],[0,1,0],[1,1,0],[1,0.6,0],9,9,9,9,9,9];
+			var index;
+			var c =function getColor(){
+				index = getRandomInt(0,5);
+				while(colorsArr[index+6]==0) {
+					index = getRandomInt(0,5);
+				}
+				colorsArr[index+6]--;
+			 	return colorsArr[index];
+			}
+			
+			c1_1 = new Plate([ -1,-1,32],1,0.1,4,c(),"up");
+			c1_2 = new Plate([ 0,0,32],1,0.1,4,c(),"up");
+			c1_3 = new Plate([ 1,1,32],1,0.1,4,c(),"up");
+			c1_4 = new Plate([ -2,0,32],1,0.1,4,c(),"up");
+			c1_5 = new Plate([ -1,1,32],1,0.1,4,c(),"up");
+			c1_6 = new Plate([ 0,2,32],1,0.1,4,c(),"up");
+			c1_7 = new Plate([ 2,0,32],1,0.1,4,c(),"up");
+			c1_8 = new Plate([ 1,-1,32],1,0.1,4,c(),"up");
+			c1_9 = new Plate([ 0,-2,32],1,0.1,4,c(),"up");
+
+			c2_1 = new Plate([ -1,-1,10],1,0.1,4,c(),"down");
+			c2_2 = new Plate([ 0,0,10],1,0.1,4,c(),"down");
+			c2_3 = new Plate([ 1,1,10],1,0.1,4,c(),"down");
+			c2_4 = new Plate([ -2,0,10],1,0.1,4,c(),"down");
+			c2_5 = new Plate([ -1,1,10],1,0.1,4,c(),"down");
+			c2_6 = new Plate([ 0,2,10],1,0.1,4,c(),"down");
+			c2_7 = new Plate([ 2,0,10],1,0.1,4,c(),"down");
+			c2_8 = new Plate([ 1,-1,10],1,0.1,4,c(),"down");
+			c2_9 = new Plate([ 0,-2,10],1,0.1,4,c(),"down");
+			
+			c3=   new Plate([ 1.2,0.8,21],1,0.1,4,c(),"side_1");
+			c3_1= new Plate([ 0.2,-0.2,21],1,0.1,4,c(),"side_1");
+			c3_8= new Plate([ 0.2,1.8,21],1,0.1,4,c(),"side_1");
+			c3_2= new Plate([ -0.8,-1.2,21],1,0.1,4,c(),"side_1");
+			c3_3= new Plate([ -2.8,0.8,21],1,0.1,4,c(),"side_1");
+			c3_4= new Plate([ -1.8,-0.2,21],1,0.1,4,c(),"side_1");
+			c3_6= new Plate([ -1.8,1.8,21],1,0.1,4,c(),"side_1")
+			c3_5= new Plate([ -0.8,0.8,21],1,0.1,4,c(),"side_1");
+			c3_7= new Plate([ -0.8,2.8,21],1,0.1,4,c(),"side_1");
+			
+			
+			c4  = new Plate([ 0.8,-2.8,21],1,0.1,4,c(),"front");
+			c4_1= new Plate([ 1.8,-1.8,21],1,0.1,4,c(),"front");
+			c4_2= new Plate([ 2.8,-0.8,21],1,0.1,4,c(),"front");
+			
+			c4_3= new Plate([-0.2,-1.8,21],1,0.1,4,c(),"front");
+			c4_4= new Plate([ 0.8,-0.8,21],1,0.1,4,c(),"front");
+			c4_5= new Plate([ 1.8,0.2,21],1,0.1,4,c(),"front");
+			
+			c4_6= new Plate([ -1.2,-0.8,21],1,0.1,4,c(),"front");
+			c4_7= new Plate([ -0.2,0.2,21],1,0.1,4,c(),"front");
+			c4_8= new Plate([ 0.8,1.2,21],1,0.1,4,c(),"front");
+			
+			
+			var a = 0.0;
+			var b = 1.6;
+			c5  = new Plate([ 0.8+a,-2.8+b,21],1,0.1,4,c(),"back");
+			c5_1= new Plate([ 1.8+a,-1.8+b,21],1,0.1,4,c(),"back");
+			c5_2= new Plate([ 2.8+a,-0.8+b,21],1,0.1,4,c(),"back");
+			
+			c5_3= new Plate([-0.2+a,-1.8+b,21],1,0.1,4,c(),"back");
+			c5_4= new Plate([ 0.8+a,-0.8+b,21],1,0.1,4,c(),"back");
+			c5_5= new Plate([ 1.8+a,0.2+b,21],1,0.1,4,c(),"back");
+			
+			c5_6= new Plate([ -1.2+a,-0.8+b,21],1,0.1,4,c(),"back");
+			c5_7= new Plate([ -0.2+a,0.2+b,21],1,0.1,4,c(),"back");
+			c5_8= new Plate([ 0.8+a,1.2+b,21],1,0.1,4,c(),"back");
+			
+			
+			a=0.0;
+			b=-1.6;
+			c6=   new Plate([ 1.2+a,0.8+b,21],1,0.1,4,c(),"side_2");
+			c6_1= new Plate([ 0.2+a,-0.2+b,21],1,0.1,4,c(),"side_2");
+			c6_8= new Plate([ 0.2+a,1.8+b,21],1,0.1,4,c(),"side_2");
+			c6_2= new Plate([ -0.8+a,-1.2+b,21],1,0.1,4,c(),"side_2");
+			c6_3= new Plate([ -2.8+a,0.8+b,21],1,0.1,4,c(),"side_2");
+			c6_4= new Plate([ -1.8+a,-0.2+b,21],1,0.1,4,c(),"side_2");
+			c6_6= new Plate([ -1.8+a,1.8+b,21],1,0.1,4,c(),"side_2")
+			c6_5= new Plate([ -0.8+a,0.8+b,21],1,0.1,4,c(),"side_2");
+			c6_7= new Plate([ -0.8+a,2.8+b,21],1,0.1,4,c(),"side_2");
+			
+		}
+
+		var frame = 0;
+
+		function drawFrame()
+		{
+			frame++;
+			gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT);
+
+			lookAt([5*Math.cos(frame/100),10*Math.sin(frame/100),15*Math.sin(frame/100)], [0,0,0], [0,0,1]);
+
+        c1_1.draw();
+        c1_2.draw();
+        c1_3.draw();
+        c1_4.draw();
+        c1_5.draw();
+        c1_6.draw();
+        c1_7.draw();
+        c1_8.draw();
+        c1_9.draw();
+
+		c2_1.draw();
+        c2_2.draw();
+        c2_3.draw();
+        c2_4.draw();
+        c2_5.draw();
+        c2_6.draw();
+        c2_7.draw();
+        c2_8.draw();
+        c2_9.draw();
+
+		c3.draw();
+		c3_1.draw();
+		c3_2.draw();
+		c3_3.draw();
+		c3_4.draw();
+		c3_5.draw();
+		c3_6.draw();
+		c3_7.draw();
+		c3_8.draw();
+		
+		c4.draw();
+		c4_1.draw();
+		c4_2.draw();
+		c4_3.draw();
+		c4_4.draw();
+		c4_5.draw();
+		c4_6.draw();
+		c4_7.draw();
+		c4_8.draw();
+		
+		c5.draw();
+		c5_1.draw();
+		c5_2.draw();
+		c5_3.draw();
+		c5_4.draw();
+		c5_5.draw();
+		c5_6.draw();
+		c5_7.draw();
+		c5_8.draw();
+		
+		c6.draw();
+		c6_1.draw();
+		c6_2.draw();
+		c6_3.draw();
+		c6_4.draw();
+		c6_5.draw();
+		c6_6.draw();
+		c6_7.draw();
+		c6_8.draw();
+
+		requestAnimationFrame(drawFrame);
+		}
+function getRandomInt(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+	</script>
+</head>
+
+<body onload="start()">
+	<h2>Rubik's cube</h2>
+
+	<noscript>
+		Could not create JS!
+	</noscript>
+
+	<canvas id="picasso" width="600" height="400" style="border: solid;">
+		Could not create canvas!
+	</canvas>
+</body>

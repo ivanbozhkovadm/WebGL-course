@@ -1,0 +1,219 @@
+﻿<!--
+-----------------------------------------------
+			BOZHKOV PROJECTS
+			-WebGL projects-
+-----------------------------------------------
+-->
+<!DOCTYPE html>
+
+<head>
+	<meta charset="utf-8"/>
+	<title>Newton's swinging balls</title>
+
+	<script src="webgl-fmi.js"></script>
+
+	<script id="vshader" type="x-shader/x-vertex">
+		uniform mat4 uProjectionMatrix;
+		uniform mat4 uViewMatrix;
+		uniform mat4 uModelMatrix;
+
+		uniform bool uUseAmbient;
+		uniform vec3 uAmbientColor;
+
+		uniform bool uUseDiffuse;
+		uniform vec3 uDiffuseColor;
+
+		uniform vec3 uLightDir;
+
+		attribute vec3 aXYZ;		
+		attribute vec3 aColor;		
+		attribute vec3 aNormal;		
+
+		varying vec3 vNormal;
+		varying vec3 vColor;
+		varying vec3 vPos;
+
+		void main ()
+		{
+			mat4 mvMatrix = uViewMatrix * uModelMatrix;
+			vec4 pos = mvMatrix * vec4(aXYZ,1);
+			gl_Position = uProjectionMatrix * pos;
+
+			
+			vColor = aColor;
+			if (uUseAmbient)
+				vColor *= uAmbientColor;
+
+			vec3 normal = vec3(normalize(mvMatrix*vec4(aNormal,0)));
+			vec3 light = normalize(-uLightDir);
+			if (uUseDiffuse)
+				vColor += aColor*uDiffuseColor*max(dot(normal,light),0.0);
+
+			vPos = pos.xyz/pos.w;
+			vNormal = normal;
+		}
+	</script>
+
+	<script id="fshader" type="x-shader/x-fragment">
+		precision mediump float;
+
+		
+		uniform highp vec3 uLightDir;
+		uniform bool uUseSpecular;
+		uniform vec3 uSpecularColor;
+
+		varying vec3 vNormal;
+		varying vec3 vColor;
+		varying vec3 vPos;
+
+		void main( )
+		{
+			vec3 light = normalize(-uLightDir);
+
+			
+			vec3 reflectedLight = normalize(reflect(light,normalize(vNormal)));
+
+			vec3 viewDir = normalize(vPos);
+
+			float cosa = abs(dot(reflectedLight,viewDir));
+			vec3 specularColor = vec3(pow(cosa,4.0));
+
+			gl_FragColor = vec4(vColor+specularColor,1);
+		}
+	</script>
+
+	<script>
+		function start( )
+		{
+			var	canvas = document.getElementById("picasso");
+			canvas.addEventListener('webglcontextlost',function(event){event.preventDefault();},false);
+			canvas.addEventListener('webglcontextrestored',function(){init();},false);
+
+			init();
+			drawFrame();
+		}
+
+		function init()
+		{
+			gl = getContext("picasso");
+			glprog = getProgram("vshader","fshader");
+
+
+			aXYZ = gl.getAttribLocation(glprog,"aXYZ");
+			uProjectionMatrix = gl.getUniformLocation(glprog,"uProjectionMatrix");
+			uViewMatrix = gl.getUniformLocation(glprog,"uViewMatrix");
+			uModelMatrix = gl.getUniformLocation(glprog,"uModelMatrix");
+
+			aColor = gl.getAttribLocation(glprog,"aColor");
+			uAmbientColor = gl.getUniformLocation(glprog,"uAmbientColor");
+			uUseAmbient   = gl.getUniformLocation(glprog,"uUseAmbient");
+
+			aNormal = gl.getAttribLocation(glprog,"aNormal");
+			uDiffuseColor = gl.getUniformLocation(glprog,"uDiffuseColor");
+			uUseDiffuse = gl.getUniformLocation(glprog,"uUseDiffuse");
+			uUseSpecular = gl.getUniformLocation(glprog,"uUseSpecular");
+			uLightDir = gl.getUniformLocation(glprog,"uLightDir");
+
+			gl.enable(gl.DEPTH_TEST);
+			gl.clearColor(0.8,0.9,0.7,1);
+
+			identity();
+			perspective(30,gl.canvas.width/gl.canvas.height,1,40000);
+
+			gl.uniform3f(uAmbientColor,0.7,0.7,0.7);
+			gl.uniform1i(uUseAmbient,true);
+
+			gl.uniform3f(uDiffuseColor,1,1,1);
+			gl.uniform1i(uUseDiffuse,true);
+
+			gl.uniform3f(uLightDir,0,-1,-0.3);
+
+
+		var c = 12, e=0.5;
+		base = [];
+			base.push(new Cylinder([2*c,+c,-c],e,c+c+e,[1,1,1,1]));
+			base.push(new Cylinder([2*c,-c,-c],e,c+c+e,[1,1,1,1]));
+			base.push(new Cylinder([-c,+c,-c],e,c+c+e,[1,1,1,1]));
+			base.push(new Cylinder([-c,-c,-c],e,c+c+e,[1,1,1,1]));
+			base.push(new Cylinder([-c-e/4,c,-c],e,c+c+c,[1,1,1,1],true));
+			base.push(new Cylinder([-c-e/4,-c,-c],e,c+c+c,[1,1,1,1],true));
+
+			cylinder_front_left = new Cylinder([+2*c,+c,-15],2,3,[0.2,0.1,0.1,1]);
+			sphere_front_left  = new Sphere([+2*c,+c,-12],2,[0.2,0.1,0.1]);
+
+			cylinder_front_right  = new Cylinder([-c,+c,-15],2,3,[0.2,0.1,0.1,1]);
+			sphere_front_right  = new Sphere([-c,+c,-12],2,[0.2,0.1,0.1]);
+
+			cylinder_back_left = new Cylinder([+2*c,-c,-15],2,3,[0.2,0.1,0.1,1]);
+			sphere_back_left  = new Sphere([+2*c,-c,-12],2,[0.2,0.1,0.1]);
+
+			cylinder_back_right = new Cylinder([-c,-c,-15],2,3,[0.2,0.1,0.1,1]);
+			sphere_back_right  = new Sphere([-c,-c,-12],2,[0.2,0.1,0.1]);
+
+			groundwork = new Cuboid([6,0,-c],[3*c,2*c,2],[0.2,0.2,0.2]);
+
+			var m = 3;
+			ballArr=[];
+			for (var i = -1; i < 8-1; i++) {
+				ballArr.push(new Sphere([i*m,0,-3],1.5,[0.4,0.4,0.4]));
+			}
+			lineArr=[];
+			for (var i = -1; i < 8-1; i++) {
+				lineArr.push(new Cone([i*m,1,-3],0.1,20,[0,0,0],"front"));
+				lineArr.push(new Cone([i*m,-1,-3],0.1,20,[0,0,0],"back"));
+			}
+		}
+
+		var frame = 0;
+
+		var n = 8; 
+
+		function drawFrame()
+		{
+			frame++;
+			gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT);
+	
+			lookAt([ 100*Math.cos(frame/60),100*Math.sin(frame/60),0], [0,0,0], [0,0,1]);
+			for (var i=0; i<6; i++)
+			base[i].draw();
+
+			cylinder_front_left.draw();
+			sphere_front_left.draw();
+
+			cylinder_front_right.draw();
+			sphere_front_right.draw();
+
+			cylinder_back_left.draw();
+			sphere_back_left.draw();
+
+			cylinder_back_right.draw();
+			sphere_back_right.draw();
+
+			groundwork.draw();
+
+			for (var i=0; i<lineArr.length; i++)
+			lineArr[i].draw();
+			
+			for (var i=0; i<8; i++)
+			{
+				pushMatrix();
+				ballArr[i].draw();
+				popMatrix();
+			}
+
+			requestAnimationFrame(drawFrame);
+		}
+	</script>
+</head>
+
+<body onload="start()">
+	<h2>Newton's swinging balls</h2>
+
+	<noscript>
+		Could not load JavaScript!
+	</noscript>
+
+	<canvas id="picasso" width="600" height="400" style="border: solid;">
+		Could not load canvas!
+	</canvas>
+</body>

@@ -1,0 +1,235 @@
+﻿<!DOCTYPE html>
+
+<!--
+-----------------------------------------------
+			BOZHKOV PROJECTS
+			-WebGL projects-
+-----------------------------------------------
+-->
+<head>
+	<meta charset="utf-8"/>
+	<title>TheWave</title>
+
+	<script src="webgl-fmi.js">
+		
+	</script>
+
+	<script id="vshader" type="x-shader/x-vertex">
+		uniform mat4 uProjectionMatrix;
+		uniform mat4 uViewMatrix;
+		uniform mat4 uModelMatrix;
+
+		uniform bool uUseAmbient;
+		uniform vec3 uAmbientColor;
+
+		uniform bool uUseDiffuse;
+		uniform vec3 uDiffuseColor;
+
+		uniform vec3 uLightDir;
+
+		attribute vec3 aXYZ;		// vertex coordinates
+		attribute vec3 aColor;		// vertex color
+		attribute vec3 aNormal;		// vertex normal vector
+
+		varying vec3 vNormal;
+		varying vec3 vColor;
+		varying vec3 vPos;
+
+		void main ()
+		{
+			mat4 mvMatrix = uViewMatrix * uModelMatrix;
+			vec4 pos = mvMatrix * vec4(aXYZ,1);
+			gl_Position = uProjectionMatrix * pos;
+
+			// Ambient light
+			vColor = aColor;
+			if (uUseAmbient)
+				vColor *= uAmbientColor;
+
+			//Diffuse reflection 
+			vec3 normal = vec3(normalize(mvMatrix*vec4(aNormal,0)));
+			vec3 light = normalize(-uLightDir);
+			if (uUseDiffuse)
+				vColor += aColor*uDiffuseColor*max(dot(normal,light),0.0);
+
+			vPos = pos.xyz/pos.w;
+			vNormal = normal;
+		}
+	</script>
+
+	<script id="fshader" type="x-shader/x-fragment">
+		precision mediump float;
+
+		uniform highp vec3 uLightDir;
+		uniform bool uUseSpecular;
+		uniform vec3 uSpecularColor;
+		uniform float uShininess;
+
+		varying vec3 vNormal;
+		varying vec3 vColor;
+		varying vec3 vPos;
+
+		void main( )
+		{
+			vec3 specularColor = vec3(0);
+
+			// Reflection
+			if (uUseSpecular)
+			{
+				vec3 light = normalize(-uLightDir);
+				vec3 reflectedLight = normalize(reflect(light,normalize(vNormal)));
+				vec3 viewDir = normalize(vPos);
+				float cosa = max(dot(reflectedLight,viewDir),0.0);
+				specularColor = uSpecularColor*pow(cosa,uShininess);
+			}
+			gl_FragColor = vec4(vColor+specularColor,1);
+		}
+	</script>
+
+	<script>
+		var k=40;
+
+		function start( )
+		{
+			var	canvas = document.getElementById("picasso");
+			canvas.addEventListener('webglcontextlost',function(event){event.preventDefault();},false);
+			canvas.addEventListener('webglcontextrestored',function(){init();},false);
+
+			init();
+			drawFrame();
+		}
+
+
+		function surface(x,y)
+		{
+			var r=Math.sqrt(x*x+y*y);
+			return 5*Math.cos(r/3)*Math.cos(r/10)*Math.cos(r/20);
+		}
+
+		function init()
+		{
+			gl = getContext("picasso");
+			glprog = getProgram("vshader","fshader");
+
+			aXYZ = gl.getAttribLocation(glprog,"aXYZ");
+			uProjectionMatrix = gl.getUniformLocation(glprog,"uProjectionMatrix");
+			uViewMatrix = gl.getUniformLocation(glprog,"uViewMatrix");
+			uModelMatrix = gl.getUniformLocation(glprog,"uModelMatrix");
+
+			aColor = gl.getAttribLocation(glprog,"aColor");
+			uAmbientColor = gl.getUniformLocation(glprog,"uAmbientColor");
+			uUseAmbient   = gl.getUniformLocation(glprog,"uUseAmbient");
+
+			aNormal = gl.getAttribLocation(glprog,"aNormal");
+
+			uDiffuseColor = gl.getUniformLocation(glprog,"uDiffuseColor");
+			uUseDiffuse = gl.getUniformLocation(glprog,"uUseDiffuse");
+
+			uSpecularColor = gl.getUniformLocation(glprog,"uSpecularColor");
+			uUseSpecular = gl.getUniformLocation(glprog,"uUseSpecular");
+
+			uLightDir = gl.getUniformLocation(glprog,"uLightDir");
+			uShininess = gl.getUniformLocation(glprog,"uShininess");
+
+			gl.enable(gl.DEPTH_TEST);
+			gl.clearColor(1,1,1,1);
+
+			identity();
+			perspective(30,gl.canvas.width/gl.canvas.height,1,40000);
+
+					}
+
+		var frame = 0;
+
+		function drawFrame()
+		{
+			frame++;
+			gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT); // изчистваме цвета и дълбочината
+
+			// camera moving
+			var dist = 80+37*Math.sin(frame/100);
+			var d = 0.6+0.3*Math.sin(frame/200);
+			lookAt([dist*Math.cos(frame/300)*d,dist*Math.sin(frame/300)*d,(140-dist)*d], [0.1,-0.1,0], [0,0,1]);
+			var p=[];	// heigh of every vertex
+			var n=[];	// normal vector of every vertex
+
+			// calculating heigh
+			for (var x=-k; x<=k; x++)
+			{
+				p[x]=[];
+				for (var y=-k; y<=k; y++){
+					var r=Math.sqrt(x*x+y*y);
+					p[x][y]=surface(x*Math.sin(frame/20),y*Math.sin(frame/20));
+				}
+			}
+
+			// calculating normal vectors 
+			for (var x=-k; x<=k; x++)
+			{
+				n[x]=[];
+				for (var y=-k; y<=k; y++)
+				{
+					var eps = 0.001;
+					var p0 = [x,y,surface(x,y)];
+					var p1 = [x-eps,y,surface(x-eps,y)];
+					var p2 = [x,y-eps,surface(x,y-eps)];
+					n[x][y]=unitVector(vectorProduct(vectorPoints(p1,p0),vectorPoints(p2,p0)));
+				}
+			}
+
+			// generating triangles: координати на върхове и нормали
+			//put the normal for every vortex in triangle 
+			var data = [];
+			for (var x=-k; x<k; x++)
+				for (var y=-k; y<k; y++)
+				{
+					data.push(x,  y,  p[x  ][y  ],n[x][y][0],n[x][y][1],n[x][y][2]);
+					data.push(x+1,y,  p[x+1][y  ],n[x+1][y][0],n[x+1][y][1],n[x+1][y][2]);
+					data.push(x,  y+1,p[x  ][y+1],n[x][y+1][0],n[x][y+1][1],n[x][y+1][2]);
+
+					data.push(x  ,y+1,p[x  ][y+1],n[x][y+1][0],n[x][y+1][1],n[x][y+1][2]);
+					data.push(x+1,y  ,p[x+1][y  ],n[x+1][y][0],n[x+1][y][1],n[x+1][y][2]);
+					data.push(x+1,y+1,p[x+1][y+1],n[x+1][y+1][0],n[x+1][y+1][1],n[x+1][y+1][2]);
+				}
+
+			var buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
+
+			gl.enableVertexAttribArray(aXYZ);
+			gl.vertexAttribPointer(aXYZ,3,gl.FLOAT,false,6*FLOATS,0*FLOATS);
+			
+			gl.enableVertexAttribArray(aNormal);
+			gl.vertexAttribPointer(aNormal,3,gl.FLOAT,false,6*FLOATS,3*FLOATS);
+
+			gl.vertexAttrib3f(aColor,0.8, 0.4, 0.1);
+			gl.uniform3f(uAmbientColor,0.5,0.5,0.5);
+			gl.uniform3f(uDiffuseColor,0.3,0.3,0.3);
+			gl.uniform3f(uSpecularColor,1,1,1);
+			gl.uniform1f(uShininess,20);
+
+			gl.uniform3f(uLightDir,0,0,-1);
+
+			gl.uniform1i(uUseAmbient,true);
+			gl.uniform1i(uUseDiffuse,true);
+			gl.uniform1i(uUseSpecular,true);
+
+			useMatrix();
+			gl.drawArrays(gl.TRIANGLES,0,(2*k)*(2*k)*(2*3));
+
+			requestAnimationFrame(drawFrame);
+		}
+	</script>
+</head>
+
+<body onload="start()">
+	<h2>Wave</h2>
+
+	<noscript>
+		Could not load JavaScript! 
+	</noscript>
+
+	<canvas id="picasso" width="600" height="400" style="border: solid;">
+		Could not load canvas!
+	</canvas>
+</body>

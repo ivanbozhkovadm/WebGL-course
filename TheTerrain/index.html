@@ -1,0 +1,224 @@
+﻿<!DOCTYPE html>
+
+<head>
+	<meta charset="utf-8"/>
+	<title>The Bay</title>
+
+	<script src="webgl-fmi.js"></script>
+	<script src="shaders.js"></script>
+	
+	<script>
+	var birds = [];
+	var n = 128;
+		//points of terrain
+		var data2 = [];
+		//0:256
+		for (var x=0; x<=n; x++)
+		{
+			data2[x] = [];
+			for (var y=0; y<=n; y++)
+				data2[x][y] = [x-n/2,y-n/2,0]; //graphic is on both sides
+		}
+		//0,0,256,256
+		function terrain(x1,y1,x2,y2)
+		{
+			//first divide
+			var xm = (x1+x2)/2; //128
+			var ym = (y1+y2)/2;	//128
+			
+			//create loop for x,y,z [0],[1],[2]
+			for (var i=0; i<3; i++)
+			{
+					
+					//128,0
+				data2[xm][y1][i] = (data2[x1][y1][i]+data2[x2][y1][i])/2;
+					//128,256
+				data2[xm][y2][i] = (data2[x1][y2][i]+data2[x2][y2][i])/2;
+					//0,128
+				data2[x1][ym][i] = (data2[x1][y1][i]+data2[x1][y2][i])/2;
+					//256,128
+				data2[x2][ym][i] = (data2[x2][y1][i]+data2[x2][y2][i])/2;
+					//128,128
+				data2[xm][ym][i] = (data2[xm][y1][i]+data2[xm][y2][i])/2;
+
+				var k = (x2-x1)/((i<2)?7:4);
+				data2[xm][y1][i] += random(-k,k);
+				data2[xm][y2][i] += random(-k,k);
+				data2[x1][ym][i] += random(-k,k);
+				data2[x2][ym][i] += random(-k,k);
+				data2[xm][ym][i] += random(-k,k);
+			}
+		}
+		
+		//algorithm which divided the sheet and set points to be rised
+		size = n;
+		while (size>1)
+		{
+			for (var x=0; x<n; x+=size)
+				for (var y=0; y<n; y+=size)
+					terrain(x,y,x+size,y+size);
+			size /= 2;
+		}
+		
+	
+		function randomTerrain()
+		{
+			var data = [];
+			for (var x=0; x<=n; x++)
+				for (var y=0; y<=n; y++)
+					data.push(data2[x][y][0],data2[x][y][1],data2[x][y][2]);
+			this.buf = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+			this.n = data.length/3;
+			this.center = [0,0,0];
+			this.size = 1;
+			this.color = [0,1,0];
+		}
+		
+		
+		randomTerrain.prototype.draw = function()
+		{
+			gl.vertexAttrib3fv(aColor,this.color);
+			useMatrix();
+				gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);
+				gl.enableVertexAttribArray(aXYZ);
+				gl.vertexAttribPointer(aXYZ,3,gl.FLOAT,false,3*FLOATS,0*FLOATS);
+				gl.drawArrays(gl.POINTS,0,this.n);	
+		}
+
+	
+		function start( )
+		{
+			var	canvas = document.getElementById("picasso");
+			canvas.addEventListener('webglcontextlost',function(event){event.preventDefault();},false);
+			canvas.addEventListener('webglcontextrestored',function(){init();},false);
+
+			init();
+			drawFrame();
+			
+		}
+		
+		function init()
+		{
+			gl = getContext("picasso");
+			glprog = getProgram(vShader,fShader);
+			getVariables();
+
+			gl.enable(gl.DEPTH_TEST);
+			gl.clearColor(0.8,0.9,1,1);
+
+			gl.enable(gl.BLEND);
+			gl.blendFunc(gl.SRC_ALPHA,gl.SRC_ONE_MINUS_ALPHA);
+			gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+			
+			identity();
+			perspective(30,gl.canvas.width/gl.canvas.height,1,40000);
+			terra = new randomTerrain();
+			
+			gl.uniform1i(uUseNormalMatrix,false);
+			
+			
+			// generate random terrain
+			terra = [];
+			var i = 0;
+			var highest = 0;
+			var birdsHight = [];
+			for (var x=0; x<=n; x++)
+			{
+				for (var y=0; y<=n; y++)
+				{
+					if(data2[x][y][2]>15)
+					{
+						terra[i] = new Cuboid([data2[x][y][0],data2[x][y][1],data2[x][y][2]],[3,3,3],[1,0.9,1]);
+					
+					}
+					else if((data2[x][y][2]>-30) && (data2[x][y][2]<-5)){
+						terra[i] = new Cuboid([data2[x][y][0],data2[x][y][1],data2[x][y][2]],[3,3,3],[1,0.7,0]);
+					}
+					else 
+					{
+						terra[i] = new Cuboid([data2[x][y][0],data2[x][y][1],data2[x][y][2]],[3,3,3],[0,0.5,0]);
+					}
+					i++;
+					
+					if((data2[x][y][2])>highest)
+					{
+						
+						birdsHight[0] = data2[x][y][0];
+						birdsHight[1] = data2[x][y][1];
+						birdsHight[2] = data2[x][y][2];
+						highest = data2[x][y][2];
+						
+					}
+					
+				}
+			}
+			
+			
+			for(var i = 0;i < 10;i++)
+			{
+				var x = Math.cos(random(0,360));
+				var y =	Math.sin(random(0,360));
+				birds.push(new Cone([birdsHight[0]+x,birdsHight[1]+y,birdsHight[2]+3],0.3,0.3,[0,0,0]));
+			}
+			gl.uniform3f(uAmbientColor,0.3,0.3,0.3);
+			gl.uniform3f(uDiffuseColor,1,1,1);
+			gl.uniform3f(uLightDir,0,0,-1);
+
+			
+
+			water = new Cuboid([0,0,-30],[150,150,50]);
+			water.color = [0,0,0.5];
+		}
+
+		var time = now();
+		function now() { return (new Date()).getTime()/1000; }
+		
+		function drawFrame()
+		{
+
+			time = now();
+			gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT);
+			
+			lookAt([250*cos(time/10),450*sin(time/3),200+100*sin(time/2)],[0,0,0],[0,0,1]);
+			
+			// draw terrain
+			gl.depthMask(true);
+			
+			gl.uniform1f(uAlpha,1); // transparent
+			
+			
+			var len = terra.length;
+			for (var i=0; i<len; i++)
+				terra[i].draw(true);
+			
+			var lenB = birds.length;
+			for (var i=0; i<lenB; i++)
+				birds[i].draw(true);
+
+			// water
+			gl.depthMask(false);
+			gl.uniform1f(uAlpha,0.6); // transparent
+			water.draw();
+			
+			gl.enable(gl.CULL_FACE);
+			gl.cullFace(gl.BACK);
+
+			requestAnimationFrame(drawFrame);
+
+		}
+	</script>	
+</head>
+
+<body onload="start()">
+	<h2>The Bay</h2>
+
+	<noscript>
+	JS could not be loaded!
+	</noscript>
+	
+	<canvas id="picasso" width="600" height="400" style="border: solid;">
+		Canvas could not be loaded!
+	</canvas>
+</body>
